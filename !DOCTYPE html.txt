@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Donutipid | Affordable Treats, Made Just for You</title>
+    <meta
+      name="description"
+      content="Donutipid offers fresh donuts, custom donut box orders, and campus-ready delivery for university communities."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="container header-inner">
+          <button class="nav-toggle" aria-label="Open navigation">☰</button>
+          <div class="brand" aria-label="Donutipid home">
+            <div class="brand-mark">D</div>
+            <div>
+              <span class="brand-name">Donutipid</span>
+              <small>Affordable Treats</small>
+            </div>
+          </div>
+          <nav class="main-nav" aria-label="Main navigation">
+            <a href="#home">Home</a>
+            <a href="#shop">Shop All Donuts</a>
+            <a href="#builder">Donut Box Builder</a>
+            <a href="#orders">My Orders</a>
+            <a href="#about">About Us</a>
+            <a href="#contact">Contact Us</a>
+          </nav>
+          <div class="header-actions">
+            <button class="btn btn-ghost" id="adminLoginBtn">Admin Login</button>
+            <button class="btn btn-primary" id="cartButton">
+              Cart <span id="cartCount" class="cart-badge">0</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section id="home" class="hero-section">
+          <div class="container hero-grid">
+            <div class="hero-copy">
+              <span class="tagline">Freshly baked for campus cravings</span>
+              <h1>Sweet, chewy donuts made for everyday breaks.</h1>
+              <p>
+                Donutipid brings affordable, handcrafted donuts to your study hall,
+                dorm, and classroom. Freshly made, campus-fast, and always a delight.
+              </p>
+              <div class="cta-row">
+                <a class="btn btn-primary" href="#shop">Shop now</a>
+                <a class="btn btn-secondary" href="#builder">Build a box</a>
+              </div>
+              <div class="hero-stats">
+                <div>
+                  <strong>120</strong>
+                  <span>Donuts sold</span>
+                </div>
+                <div>
+                  <strong>4.9/5</strong>
+                  <span>Campus rating</span>
+                </div>
+                <div>
+                  <strong>15 min</strong>
+                  <span>Pickup window</span>
+                </div>
+              </div>
+            </div>
+            <div class="hero-visual" aria-label="Donut showcase">
+              <div class="donut-scene">
+                <div class="donut-hero donut-vanilla donut-left"></div>
+                <div class="donut-hero donut-vanilla donut-center"></div>
+                <div class="donut-hero donut-chocolate donut-right"></div>
+              </div>
+              <div class="float-badge">Best Seller</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="shop" class="content-section">
+          <div class="container section-header-row">
+            <div>
+              <span class="eyebrow">Shop all donuts</span>
+              <h2>Fresh favorites from the bakery counter</h2>
+            </div>
+            <div class="filter-list" id="categoryFilters"></div>
+          </div>
+          <div id="productGrid" class="product-grid"></div>
+        </section>
+
+        <section id="best-sellers" class="content-section alt-section hidden">
+          <div class="container section-header-row compact">
+            <div>
+              <span class="eyebrow">Top picks</span>
+              <h2>Best sellers this week</h2>
+            </div>
+          </div>
+          <div id="bestSellerGrid" class="best-seller-grid"></div>
+        </section>
+
+        <section id="builder" class="content-section">
+          <div class="container section-header-row compact">
+            <div>
+              <span class="eyebrow">Custom treat</span>
+              <h2>Build your own donut box</h2>
+            </div>
+          </div>
+          <div class="box-builder container">
+            <div class="builder-card">
+              <label>
+                Box size
+                <select id="boxSizeSelect"></select>
+              </label>
+              <div id="boxFlavorList" class="flavor-list"></div>
+              <div class="builder-actions">
+                <button class="btn btn-secondary full-width" id="randomizeBoxButton" type="button">Randomize box</button>
+              </div>
+              <div class="builder-summary">
+                <div>
+                  <strong id="selectedFlavorCount">0</strong>
+                  <span id="boxPieceLimit">pieces selected</span>
+                </div>
+                <div>
+                  <strong id="boxPriceDisplay">₱0</strong>
+                  <span>total</span>
+                </div>
+              </div>
+              <button class="btn btn-primary full-width" id="addBoxButton">Add box to cart</button>
+            </div>
+            <div class="builder-card preview-card">
+              <h3>Box preview</h3>
+              <div class="preview-box" id="boxPreview"></div>
+              <p id="boxPreviewText">Select your favorite flavors to get started.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="orders" class="content-section alt-section">
+          <div class="container section-header-row compact">
+            <div>
+              <span class="eyebrow">Track your order</span>
+              <h2>My orders</h2>
+            </div>
+          </div>
+          <div id="customerOrders" class="orders-panel"></div>
+        </section>
+
+        <section id="about" class="content-section">
+          <div class="container feature-grid">
+            <div>
+              <span class="eyebrow">About us</span>
+              <h2>Campus comfort, baked with heart.</h2>
+              <p>
+                Donutipid was created for busy students who want quality pastry, easy
+                ordering, and a sweet reward in the middle of every long day.
+              </p>
+              <p>
+                We offer daily-fresh donuts, custom boxes for study groups, and a campus-friendly
+                delivery system designed around class schedules and dorm life.
+              </p>
+            </div>
+            <div class="info-cards">
+              <div class="info-card">
+                <span>✦</span>
+                <h3>Fresh daily</h3>
+                <p>Batch-made early each morning and replenished during the day.</p>
+              </div>
+              <div class="info-card">
+                <span>✦</span>
+                <h3>Campus service</h3>
+                <p>Designed for President Ramon Magsaysay State University and its surrounding community.</p>
+              </div>
+              <div class="info-card">
+                <span>✦</span>
+                <h3>Student-first</h3>
+                <p>Affordable pricing, faster pickup, and flexible custom orders.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="contact" class="content-section">
+          <div class="container contact-grid">
+            <div>
+              <span class="eyebrow">Contact us</span>
+              <h2>We’re here for your donut cravings.</h2>
+              <ul class="contact-list">
+                <li>📍 President Ramon Magsaysay State University</li>
+                <li>📞 09943342873</li>
+                <li>✉️ samjeweldelacruz@gmail.com</li>
+                <li>🕒 Mon–Sun: 7:00 AM – 5:00 PM</li>
+              </ul>
+            </div>
+            <div class="contact-card contact-form-card">
+              <form id="contactForm" class="classic-contact-form">
+                <div class="classic-field-grid">
+                  <div class="classic-field">
+                    <label for="contact-name">Name</label>
+                    <input id="contact-name" type="text" name="name" placeholder="Your full name" required />
+                  </div>
+                  <div class="classic-field">
+                    <label for="contact-email">Email</label>
+                    <input id="contact-email" type="email" name="email" placeholder="name@email.com" required />
+                  </div>
+                </div>
+                <div class="classic-field full-message">
+                  <label for="contact-message">Message</label>
+                  <textarea id="contact-message" name="message" rows="4" placeholder="How can we help?" required></textarea>
+                </div>
+                <button class="btn classic-send-btn full-width" type="submit">Send message</button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section id="cart" class="content-section cart-section">
+          <div class="container section-header-row compact">
+            <div>
+              <span class="eyebrow">Your order</span>
+              <h2>Cart & checkout</h2>
+            </div>
+          </div>
+          <div class="cart-layout container">
+            <div class="cart-panel">
+              <h3 class="cart-panel-title">Your items</h3>
+              <div id="cartItems" class="cart-items"></div>
+              <div class="totals-panel cart-totals-panel hidden">
+                <div><span>Subtotal</span><strong id="checkoutSubtotal">₱0</strong></div>
+                <div class="grand-total"><span>Total</span><strong id="checkoutTotal">₱0</strong></div>
+              </div>
+            </div>
+            <div class="checkout-panel">
+              <form id="checkoutForm" class="checkout-form">
+                <h3>Customer details</h3>
+                <div class="form-grid">
+                  <label>
+                    Full name
+                    <input type="text" name="customerName" required />
+                  </label>
+                  <label>
+                    Mobile number
+                    <input type="tel" name="mobile" required />
+                  </label>
+                  <label>
+                    Department
+                    <input type="text" name="department" required />
+                  </label>
+                  <label class="full-span">
+                    Delivery or pickup point
+                    <input type="text" name="deliveryLocation" required />
+                  </label>
+                  <label>
+                    Preferred schedule
+                    <input type="datetime-local" name="schedule" required />
+                  </label>
+                  <label class="full-span">
+                    Additional instructions
+                    <textarea name="instructions" rows="3" placeholder="Any notes for the bakery or rider?"></textarea>
+                  </label>
+                </div>
+
+                <div class="payment-box">
+                  <h4>Payment method</h4>
+                  <div class="payment-options">
+                    <label class="payment-option">
+                      <input type="radio" name="paymentMethod" value="cod" checked />
+                      <span>Cash on Delivery</span>
+                    </label>
+                    <label class="payment-option">
+                      <input type="radio" name="paymentMethod" value="gcash" />
+                      <span>GCash</span>
+                    </label>
+                  </div>
+                  <div class="payment-amount-row">
+                    <span>Amount due</span>
+                    <strong id="checkoutAmountDue">₱0</strong>
+                  </div>
+                  <div id="gcashInfo" class="gcash-info hidden">
+                    <p>GCash recipient: <strong>Sam Jewel Dela Cruz</strong></p>
+                    <p>Number: <strong>09943342873</strong></p>
+                    <p>Send your payment to this account, then enter your GCash transaction reference ID to place the order.</p>
+                    <label class="gcash-reference-field" for="gcashReferenceId">
+                      GCash reference ID (required)
+                      <input type="text" id="gcashReferenceId" name="gcashReferenceId" autocomplete="off" maxlength="64" placeholder="Enter transaction reference ID" />
+                    </label>
+                    <label class="file-upload">
+                      Upload receipt (optional)
+                      <input type="file" id="receiptInput" accept="image/png,image/jpeg,image/jpg" />
+                    </label>
+                  </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary full-width" id="checkoutSubmitButton">
+                  Place order
+                </button>
+              </form>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div class="container footer-inner">
+          <div class="brand footer-brand">
+            <div class="brand-mark">D</div>
+            <div>
+              <span class="brand-name">Donutipid</span>
+              <small>Affordable Treats</small>
+            </div>
+          </div>
+          <p>Fresh donut happiness, one campus order at a time.</p>
+        </div>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <div id="adminModal" class="modal hidden" aria-modal="true" role="dialog">
+      <div class="modal-card">
+        <button class="close-modal" aria-label="Close admin login">×</button>
+        <h3>Admin login</h3>
+        <form id="adminLoginForm">
+          <label>
+            Username
+            <input type="text" name="adminUsername" autocomplete="username" required />
+          </label>
+          <label>
+            Password
+            <input type="password" name="adminPassword" autocomplete="current-password" required />
+          </label>
+          <button class="btn btn-primary full-width" type="submit">Log in</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="adminDashboard" class="dashboard hidden">
+      <div class="container dashboard-inner">
+        <div class="dashboard-header">
+          <div>
+            <span class="eyebrow">Operations dashboard</span>
+            <h2>Admin tools</h2>
+          </div>
+          <button class="btn btn-ghost" id="logoutAdminBtn">Log out</button>
+        </div>
+
+        <div class="stats-grid" id="adminStats"></div>
+
+        <div class="dashboard-panels">
+          <div class="panel large-panel" id="orderManagementPanel"></div>
+          <div class="panel hidden" id="productManagementPanel"></div>
+          <div class="panel" id="salesPanel"></div>
+          <div class="panel large-panel" id="customerListPanel"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,1331 @@
+const STORAGE_KEYS = {
+  products: 'donutipid-products',
+  cart: 'donutipid-cart',
+  orders: 'donutipid-orders',
+  dailyOrderBackupDate: 'donutipid-daily-order-backup-date',
+  admin: 'donutipid-admin'
+};
+
+const defaultProducts = [
+  {
+    id: 'classic-vanilla',
+    name: 'Classic Vanilla',
+    description: 'A timeless vanilla donut box with a soft glaze and easy bakery charm.',
+    price: 70,
+    category: 'Classic',
+    image: 'variant-vanilla',
+    available: true,
+    stock: 24,
+    featured: true
+  },
+  {
+    id: 'classic-chocolate',
+    name: 'Classic Chocolate',
+    description: 'A rich chocolate donut box made for classic sweet cravings.',
+    price: 70,
+    category: 'Classic',
+    image: 'variant-chocolate',
+    available: true,
+    stock: 18,
+    featured: true
+  },
+  {
+    id: 'classic-strawberry',
+    name: 'Classic Strawberry',
+    description: 'A warm strawberry glaze box that keeps the taste nostalgic and bright.',
+    price: 70,
+    category: 'Classic',
+    image: 'variant-strawberry',
+    available: true,
+    stock: 20,
+    featured: true
+  },
+  {
+    id: 'classic-cinnamon',
+    name: 'Classic Cinnamon',
+    description: 'A cozy cinnamon-sugar donut box with a more traditional bakery feel.',
+    price: 70,
+    category: 'Classic',
+    image: 'variant-matcha',
+    available: true,
+    stock: 16,
+    featured: true
+  }
+];
+
+const boxSizes = [
+  { id: 'regular', label: 'Regular Box', maxDonuts: 6, price: 70 },
+  { id: 'party', label: 'Party Box', maxDonuts: 12, price: 140 }
+];
+
+const ORDER_STATUSES = [
+  'Pending Confirmation',
+  'Confirmed',
+  'Preparing',
+  'Ready for Pickup',
+  'On the Way',
+  'Completed',
+  'Cancelled'
+];
+
+const state = {
+  cart: loadFromStorage(STORAGE_KEYS.cart, []),
+  orders: loadFromStorage(STORAGE_KEYS.orders, []),
+  products: loadFromStorage(STORAGE_KEYS.products, defaultProducts),
+  admin: loadFromStorage(STORAGE_KEYS.admin, { loggedIn: false }),
+  currentFilter: 'All',
+  selectedBoxSize: boxSizes[1].id,
+  selectedBoxFlavors: {},
+  notificationTimer: null,
+  checkoutInProgress: false,
+  receiptPreview: null
+};
+
+const productMap = () => new Map(state.products.map((product) => [product.id, product]));
+
+const categoryOptions = ['All', ...new Set(state.products.map((product) => product.category))];
+
+function loadFromStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function saveToStorage(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function formatPrice(value) {
+  return new Intl.NumberFormat('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    maximumFractionDigits: 0
+  }).format(value);
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
+}
+
+function notify(message, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.add('show');
+  toast.dataset.type = type;
+  if (state.notificationTimer) clearTimeout(state.notificationTimer);
+  state.notificationTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+}
+
+function generateOrderId() {
+  return `DTP-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+function getCartTotal() {
+  return state.cart.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
+}
+
+function getDeliveryFee() {
+  return 0;
+}
+
+function getCheckoutTotal() {
+  return getCartTotal() + getDeliveryFee();
+}
+
+function productStockRemaining(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  return product ? product.stock : 0;
+}
+
+function renderCategoryFilters() {
+  const filterList = document.getElementById('categoryFilters');
+  filterList.innerHTML = categoryOptions
+    .map(
+      (category) => `
+        <button class="filter-chip ${state.currentFilter === category ? 'active' : ''}" data-category="${category}">
+          ${category}
+        </button>
+      `
+    )
+    .join('');
+
+  filterList.querySelectorAll('.filter-chip').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.currentFilter = button.dataset.category;
+      renderCategoryFilters();
+      renderProducts();
+    });
+  });
+}
+
+function renderProducts() {
+  const grid = document.getElementById('productGrid');
+  const filtered = state.products.filter((product) => {
+    if (state.currentFilter === 'All') return true;
+    return product.category === state.currentFilter;
+  });
+
+  grid.innerHTML = filtered
+    .map(
+      (product) => `
+        <article class="product-card">
+          <div class="product-image ${product.image || 'variant-vanilla'}">
+            <div class="product-donut ${product.image || 'variant-vanilla'}"></div>
+            <span class="product-badge">${product.available ? 'Available' : 'Sold out'}</span>
+          </div>
+          <div class="product-body">
+            <div class="product-header">
+              <h3 class="product-name">${product.name}</h3>
+              <span class="product-price">${formatPrice(product.price)} / box</span>
+            </div>
+            <p>${product.description}</p>
+            <div class="product-meta">
+              <span>Box of 6</span>
+              <span>${product.category}</span>
+            </div>
+            <div class="qty-selector">
+              <button aria-label="Decrease quantity" data-product-action="decrease" data-product-id="${product.id}">−</button>
+              <span data-product-qty="${product.id}">1</span>
+              <button aria-label="Increase quantity" data-product-action="increase" data-product-id="${product.id}">+</button>
+            </div>
+            <button class="btn btn-primary add-btn" data-product-add="${product.id}" ${product.available ? '' : 'disabled'}>
+              ${product.available ? 'Add to cart' : 'Unavailable'}
+            </button>
+          </div>
+        </article>
+      `
+    )
+    .join('');
+
+  grid.querySelectorAll('[data-product-add]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const productId = button.dataset.productAdd;
+      addProductToCart(productId);
+    });
+  });
+
+  grid.querySelectorAll('[data-product-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const productId = button.dataset.productId;
+      const action = button.dataset.productAction;
+      updateQuickQty(productId, action === 'increase' ? 1 : -1);
+    });
+  });
+}
+
+function renderBestSellers() {
+  const bestGrid = document.getElementById('bestSellerGrid');
+  const best = state.products.filter((product) => product.featured).slice(0, 3);
+
+  bestGrid.innerHTML = best
+    .map(
+      (product, index) => `
+        <article class="best-card">
+          <div class="rank">${index + 1}</div>
+          <div class="mini-photo ${product.image || 'variant-vanilla'}"><div class="mini-donut ${product.image || 'variant-vanilla'}"></div></div>
+          <h3>${product.name}</h3>
+          <div class="summary-row">
+            <span class="product-price">${formatPrice(product.price)}</span>
+          </div>
+        </article>
+      `
+    )
+    .join('');
+}
+
+function updateQuickQty(productId, step) {
+  const qtySpan = document.querySelector(`[data-product-qty="${productId}"]`);
+  if (!qtySpan) return;
+
+  const currentQty = Number(qtySpan.textContent || '1');
+  const nextQty = Math.max(1, currentQty + step);
+  qtySpan.textContent = String(nextQty);
+}
+
+function addProductToCart(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  const qtySpan = document.querySelector(`[data-product-qty="${productId}"]`);
+  const quantity = qtySpan ? Number(qtySpan.textContent || '1') : 1;
+
+  if (!product || !product.available) {
+    notify('This donut is currently unavailable.', 'error');
+    return;
+  }
+
+  const existing = state.cart.find((item) => item.id === productId && item.kind === 'single');
+
+  if (existing) {
+    const newQty = existing.quantity + quantity;
+    if (newQty > product.stock) {
+      notify(`Only ${product.stock} units available for this item.`, 'error');
+      return;
+    }
+    existing.quantity = newQty;
+  } else {
+    state.cart.push({
+      id: product.id,
+      kind: 'box',
+      name: `${product.name} Box`,
+      price: product.price,
+      quantity,
+      image: product.image,
+      category: product.category
+    });
+  }
+
+  saveToStorage(STORAGE_KEYS.cart, state.cart);
+  renderCart();
+  renderCheckoutSummary();
+  notify(`${product.name} added to cart.`);
+}
+
+function renderCart() {
+  const cartItems = document.getElementById('cartItems');
+
+  if (!state.cart.length) {
+    cartItems.innerHTML = `
+      <div class="empty-state">
+        <h3>Your cart is empty</h3>
+        <p>Add a few campus favorites to get started.</p>
+      </div>
+    `;
+    document.getElementById('cartCount').textContent = '0';
+    return;
+  }
+
+  cartItems.innerHTML = state.cart
+    .map(
+      (item) => `
+        <div class="cart-item">
+          <div class="cart-thumb ${item.image || 'variant-vanilla'}"><div class="mini-donut ${item.image || 'variant-vanilla'}"></div></div>
+          <div class="cart-content">
+            <strong>${item.name}</strong>
+            <small>${item.kind === 'box' ? item.details?.sizeName || 'Donut box' : item.category}</small>
+            <div class="qty-selector">
+              <button data-cart-change="decrease" data-cart-id="${item.id}" data-cart-kind="${item.kind}">−</button>
+              <span>${item.quantity}</span>
+              <button data-cart-change="increase" data-cart-id="${item.id}" data-cart-kind="${item.kind}">+</button>
+            </div>
+          </div>
+          <div class="cart-actions">
+            <strong>${formatPrice(Number(item.price) * Number(item.quantity))}</strong>
+            <button class="remove-btn" data-cart-remove="${item.id}" data-cart-kind="${item.kind}">Remove</button>
+          </div>
+        </div>
+      `
+    )
+    .join('');
+
+  document.getElementById('cartCount').textContent = String(state.cart.reduce((sum, item) => sum + item.quantity, 0));
+
+  cartItems.querySelectorAll('[data-cart-change]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const kind = button.dataset.cartKind;
+      const id = button.dataset.cartId;
+      const direction = button.dataset.cartChange;
+      changeCartQty(id, kind, direction === 'increase' ? 1 : -1);
+    });
+  });
+
+  cartItems.querySelectorAll('[data-cart-remove]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.cartRemove;
+      const kind = button.dataset.cartKind;
+      removeCartItem(id, kind);
+    });
+  });
+
+  renderCheckoutSummary();
+}
+
+function changeCartQty(id, kind, delta) {
+  const item = state.cart.find((entry) => entry.id === id && entry.kind === kind);
+  if (!item) return;
+
+  if (kind === 'single') {
+    const product = state.products.find((entry) => entry.id === id);
+    if (product && item.quantity + delta > product.stock) {
+      notify(`Only ${product.stock} units available for ${product.name}.`, 'error');
+      return;
+    }
+  }
+
+  const updatedQty = item.quantity + delta;
+  if (updatedQty <= 0) {
+    removeCartItem(id, kind);
+    return;
+  }
+
+  item.quantity = updatedQty;
+  saveToStorage(STORAGE_KEYS.cart, state.cart);
+  renderCart();
+}
+
+function removeCartItem(id, kind) {
+  state.cart = state.cart.filter((item) => !(item.id === id && item.kind === kind));
+  saveToStorage(STORAGE_KEYS.cart, state.cart);
+  renderCart();
+  notify('Item removed from the cart.');
+}
+
+function renderCheckoutSummary() {
+  const subtotal = getCartTotal();
+  const total = subtotal;
+
+  document.getElementById('checkoutSubtotal').textContent = formatPrice(subtotal);
+  document.getElementById('checkoutTotal').textContent = formatPrice(total);
+  document.getElementById('checkoutAmountDue').textContent = formatPrice(total);
+}
+
+function renderBoxBuilder() {
+  const sizeSelect = document.getElementById('boxSizeSelect');
+  sizeSelect.innerHTML = boxSizes
+    .map((size) => `<option value="${size.id}">${size.label} — ${size.maxDonuts} pcs • ${formatPrice(size.price)}</option>`)
+    .join('');
+  sizeSelect.value = state.selectedBoxSize;
+
+  const container = document.getElementById('boxFlavorList');
+  const size = boxSizes.find((entry) => entry.id === state.selectedBoxSize) || boxSizes[0];
+  const flavors = state.products
+    .filter((product) => product.available)
+    .map(
+      (product) => {
+        const quantity = Number(state.selectedBoxFlavors[product.id] || 0);
+        return `
+          <div class="flavor-item ${quantity > 0 ? 'selected' : ''}">
+            <span>${product.name}</span>
+            <div class="flavor-qty-controls">
+              <button type="button" aria-label="Remove one ${product.name}" data-box-flavor-change="-1" data-flavor-id="${product.id}" ${quantity === 0 ? 'disabled' : ''}>−</button>
+              <span>${quantity}</span>
+              <button type="button" aria-label="Add one ${product.name}" data-box-flavor-change="1" data-flavor-id="${product.id}" ${getSelectedBoxPieceCount() >= size.maxDonuts ? 'disabled' : ''}>+</button>
+            </div>
+          </div>
+        `;
+      }
+    )
+    .join('');
+  container.innerHTML = flavors;
+
+  container.querySelectorAll('[data-box-flavor-change]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const flavorId = button.dataset.flavorId;
+      const change = Number(button.dataset.boxFlavorChange);
+      const size = boxSizes.find((entry) => entry.id === state.selectedBoxSize) || boxSizes[0];
+      const currentQuantity = Number(state.selectedBoxFlavors[flavorId] || 0);
+
+      if (change > 0 && getSelectedBoxPieceCount() >= size.maxDonuts) {
+        notify(`This ${size.label.toLowerCase()} holds up to ${size.maxDonuts} pieces.`, 'error');
+        return;
+      }
+
+      const nextQuantity = currentQuantity + change;
+      if (nextQuantity > 0) {
+        state.selectedBoxFlavors[flavorId] = nextQuantity;
+      } else {
+        delete state.selectedBoxFlavors[flavorId];
+      }
+      renderBoxBuilder();
+    });
+  });
+
+  renderBoxPreview();
+}
+
+function getSelectedBoxPieceCount() {
+  return Object.values(state.selectedBoxFlavors).reduce((total, quantity) => total + Number(quantity || 0), 0);
+}
+
+function renderBoxPreview() {
+  const size = boxSizes.find((entry) => entry.id === state.selectedBoxSize) || boxSizes[0];
+  const selectedProducts = state.products.filter((product) => Number(state.selectedBoxFlavors[product.id] || 0) > 0);
+  const preview = document.getElementById('boxPreview');
+  const countEl = document.getElementById('selectedFlavorCount');
+  const limitEl = document.getElementById('boxPieceLimit');
+  const priceEl = document.getElementById('boxPriceDisplay');
+  const textEl = document.getElementById('boxPreviewText');
+  const pieceCount = getSelectedBoxPieceCount();
+
+  countEl.textContent = String(pieceCount);
+  limitEl.textContent = `of ${size.maxDonuts} pieces`;
+  priceEl.textContent = formatPrice(size.price);
+
+  preview.innerHTML = selectedProducts.length
+    ? selectedProducts.map((product) => `<span class="mini-box-flavor">${product.name} × ${state.selectedBoxFlavors[product.id]}</span>`).join('')
+    : '<span class="mini-box-flavor">No flavors selected</span>';
+
+  if (pieceCount === 0) {
+    textEl.textContent = `Choose up to ${size.maxDonuts} donuts for your ${size.label.toLowerCase()}.`;
+  } else {
+    textEl.textContent = `${pieceCount} of ${size.maxDonuts} pieces selected for ${size.label.toLowerCase()}.`;
+  }
+}
+
+function bindBoxSizeChange() {
+  const select = document.getElementById('boxSizeSelect');
+  select.addEventListener('change', (event) => {
+    state.selectedBoxSize = event.target.value;
+    const size = boxSizes.find((entry) => entry.id === state.selectedBoxSize) || boxSizes[0];
+    let excessPieces = getSelectedBoxPieceCount() - size.maxDonuts;
+    for (const product of state.products.slice().reverse()) {
+      if (excessPieces <= 0) break;
+      const quantity = Number(state.selectedBoxFlavors[product.id] || 0);
+      const removeCount = Math.min(quantity, excessPieces);
+      const nextQuantity = quantity - removeCount;
+      if (nextQuantity > 0) {
+        state.selectedBoxFlavors[product.id] = nextQuantity;
+      } else {
+        delete state.selectedBoxFlavors[product.id];
+      }
+      excessPieces -= removeCount;
+    }
+    renderBoxBuilder();
+  });
+}
+
+function randomizeBoxSelection() {
+  const size = boxSizes.find((entry) => entry.id === state.selectedBoxSize) || boxSizes[0];
+  const availableFlavors = state.products.filter((product) => product.available);
+  const randomSelection = {};
+
+  if (!availableFlavors.length) {
+    notify('No donut flavors are currently available.', 'error');
+    return;
+  }
+
+  for (let piece = 0; piece < size.maxDonuts; piece += 1) {
+    const nextFlavor = availableFlavors[Math.floor(Math.random() * availableFlavors.length)];
+    randomSelection[nextFlavor.id] = (randomSelection[nextFlavor.id] || 0) + 1;
+  }
+
+  state.selectedBoxFlavors = randomSelection;
+  renderBoxBuilder();
+  notify(`${size.label} randomized with ${size.maxDonuts} pieces.`);
+}
+
+function addBoxToCart() {
+  const size = boxSizes.find((entry) => entry.id === state.selectedBoxSize) || boxSizes[0];
+  const selection = state.products.filter((product) => Number(state.selectedBoxFlavors[product.id] || 0) > 0);
+  const pieceCount = getSelectedBoxPieceCount();
+
+  if (pieceCount === 0) {
+    notify('Choose at least one donut flavor for your box.', 'error');
+    return;
+  }
+
+  if (pieceCount > size.maxDonuts) {
+    notify(`A ${size.label} can contain up to ${size.maxDonuts} pieces.`, 'error');
+    return;
+  }
+
+  state.cart.push({
+    id: `box-${Date.now()}`,
+    kind: 'box',
+    name: `${size.label} Box`,
+    price: size.price,
+    quantity: 1,
+    image: 'variant-chocolate',
+    details: {
+      sizeName: size.label,
+      flavors: selection.map((item) => `${item.name} × ${state.selectedBoxFlavors[item.id]}`)
+    }
+  });
+
+  saveToStorage(STORAGE_KEYS.cart, state.cart);
+  renderCart();
+  state.selectedBoxFlavors = {};
+  renderBoxBuilder();
+  notify(`${size.label} box added to the cart.`);
+}
+
+function renderCustomerOrders() {
+  const panel = document.getElementById('customerOrders');
+  const customerOrders = state.orders.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (!customerOrders.length) {
+    panel.innerHTML = `
+      <div class="empty-state">
+        <h3>No orders yet</h3>
+        <p>Your order history will appear here after checkout.</p>
+      </div>
+    `;
+    return;
+  }
+
+  panel.innerHTML = customerOrders
+    .map(
+      (order) => `
+        <article class="order-card">
+          <div class="order-card-header">
+            <div>
+              <span class="order-pill">${order.orderId}</span>
+              <h3>${order.customerName}</h3>
+            </div>
+            <span class="status-chip ${statusClass(order.status)}">${order.status === 'Out for Delivery' ? 'On the Way' : order.status}</span>
+          </div>
+
+          <div class="order-card-meta">
+            <span>${new Date(order.createdAt).toLocaleString()}</span>
+            <span class="payment-pill ${paymentClass(order.paymentStatus)}">${order.paymentMethod.toUpperCase()} · ${order.paymentStatus}</span>
+          </div>
+
+          <div class="order-progress">
+            ${ORDER_STATUSES.map((status) => {
+              const isActive = status === order.status || (status === 'On the Way' && order.status === 'Out for Delivery');
+              return `<div class="progress-step ${isActive ? 'active' : ''}">${status}</div>`;
+            }).join('')}
+          </div>
+
+          <div class="order-items">
+            ${order.items
+              .map(
+                (item) => `
+                  <div class="order-item">
+                    <span>${item.name} × ${item.quantity}</span>
+                    <strong>${formatPrice(Number(item.price) * Number(item.quantity))}</strong>
+                  </div>
+                `
+              )
+              .join('')}
+          </div>
+
+          <div class="order-card-total">
+            ${order.paymentMethod === 'gcash' && order.gcashReferenceId ? `<div><strong>GCash reference ID:</strong><span>${escapeHTML(order.gcashReferenceId)}</span></div>` : ''}
+            <div>
+              <strong>Total:</strong>
+              <span>${formatPrice(order.total)}</span>
+            </div>
+          </div>
+        </article>
+      `
+    )
+    .join('');
+}
+
+function statusClass(status) {
+  if (status === 'Pending Confirmation') return 'pending';
+  if (status === 'Confirmed') return 'confirmed';
+  if (status === 'Preparing') return 'preparing';
+  if (status === 'Ready for Pickup') return 'ready';
+  if (status === 'On the Way' || status === 'Out for Delivery') return 'out';
+  if (status === 'Completed') return 'completed';
+  return 'cancelled';
+}
+
+function paymentClass(status) {
+  if (status === 'Pending Verification' || status === 'Pending Payment') return 'pending';
+  if (status === 'Verified' || status === 'Paid') return 'paid';
+  if (status === 'Rejected') return 'rejected';
+  return 'pending';
+}
+
+function handleCheckout(event) {
+  event.preventDefault();
+
+  if (!state.cart.length) {
+    notify('Add at least one item before checking out.', 'error');
+    return;
+  }
+
+  if (state.checkoutInProgress) return;
+  state.checkoutInProgress = true;
+
+  const form = event.target;
+  const formData = new FormData(form);
+  const paymentMethod = formData.get('paymentMethod');
+  const receiptFile = document.getElementById('receiptInput').files[0];
+  const gcashReferenceId = String(formData.get('gcashReferenceId') || '').trim();
+
+  const customerName = String(formData.get('customerName') || '').trim();
+  const mobile = String(formData.get('mobile') || '').trim();
+  const department = String(formData.get('department') || '').trim();
+  const deliveryLocation = String(formData.get('deliveryLocation') || '').trim();
+  const schedule = String(formData.get('schedule') || '').trim();
+  const instructions = String(formData.get('instructions') || '').trim();
+
+  if (!customerName || !mobile || !department || !deliveryLocation || !schedule) {
+    notify('Please complete all required delivery details before placing the order.', 'error');
+    state.checkoutInProgress = false;
+    return;
+  }
+
+  if (paymentMethod === 'gcash' && !gcashReferenceId) {
+    notify('Enter your GCash transaction reference ID.', 'error');
+    state.checkoutInProgress = false;
+    return;
+  }
+
+  const subTotal = getCartTotal();
+  const deliveryFee = getDeliveryFee();
+  const total = subTotal + deliveryFee;
+
+  let receiptData = null;
+
+  if (paymentMethod === 'gcash' && receiptFile) {
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (!allowedTypes.includes(receiptFile.type)) {
+      notify('Receipt must be a JPG or PNG file.', 'error');
+      state.checkoutInProgress = false;
+      return;
+    }
+    if (receiptFile.size > 3 * 1024 * 1024) {
+      notify('Receipt must be under 3MB.', 'error');
+      state.checkoutInProgress = false;
+      return;
+    }
+
+    const fileReader = new FileReader();
+    fileReader.onload = () => {
+      receiptData = fileReader.result;
+      completeCheckout({
+        customerName,
+        mobile,
+        department,
+        deliveryLocation,
+        schedule,
+        instructions,
+        paymentMethod,
+        gcashReferenceId,
+        receiptData,
+        subTotal,
+        deliveryFee,
+        total
+      }, form);
+    };
+    fileReader.readAsDataURL(receiptFile);
+    return;
+  }
+
+  completeCheckout(
+    {
+      customerName,
+      mobile,
+      department,
+      deliveryLocation,
+      schedule,
+      instructions,
+      paymentMethod,
+      gcashReferenceId,
+      receiptData: null,
+      subTotal,
+      deliveryFee,
+      total
+    },
+    form
+  );
+}
+
+function completeCheckout(data, form) {
+  const orderId = generateOrderId();
+
+  const order = {
+    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`,
+    orderId,
+    customerName: data.customerName,
+    email: data.email,
+    mobile: data.mobile,
+    department: data.department,
+    deliveryLocation: data.deliveryLocation,
+    preferredSchedule: data.schedule,
+    instructions: data.instructions,
+    paymentMethod: data.paymentMethod,
+    gcashReferenceId: data.gcashReferenceId || '',
+    paymentStatus: data.paymentMethod === 'cod' ? 'Pending Payment' : 'Pending Verification',
+    status: 'Pending Confirmation',
+    items: state.cart.map((item) => ({
+      id: item.id,
+      name: item.name,
+      kind: item.kind,
+      price: item.price,
+      quantity: item.quantity,
+      details: item.details || null
+    })),
+    subtotal: data.subTotal,
+    deliveryFee: data.deliveryFee,
+    total: data.total,
+    createdAt: new Date().toISOString(),
+    receiptData: data.receiptData,
+    adminNotes: ''
+  };
+
+  state.orders.unshift(order);
+  saveToStorage(STORAGE_KEYS.orders, state.orders);
+
+  state.cart = [];
+  saveToStorage(STORAGE_KEYS.cart, state.cart);
+  renderCart();
+  renderCustomerOrders();
+  renderAdminDashboard();
+
+  form.reset();
+  document.getElementById('receiptInput').value = '';
+  state.checkoutInProgress = false;
+
+  notify(`Order ${orderId} placed successfully!`);
+  window.location.hash = 'orders';
+}
+
+function renderAdminDashboard() {
+  const dashboard = document.getElementById('adminDashboard');
+  if (!state.admin.loggedIn) {
+    dashboard.classList.add('hidden');
+    return;
+  }
+  dashboard.classList.remove('hidden');
+
+  let paymentStatusesUpdated = false;
+  state.orders.forEach((order) => {
+    if (order.status === 'Completed' && order.paymentStatus !== 'Paid') {
+      order.paymentStatus = 'Paid';
+      paymentStatusesUpdated = true;
+    }
+  });
+  if (paymentStatusesUpdated) saveToStorage(STORAGE_KEYS.orders, state.orders);
+  runDailyOrderBackup();
+
+  const statsGrid = document.getElementById('adminStats');
+  const totalOrders = state.orders.length;
+  const pendingOrders = state.orders.filter((order) => order.status === 'Pending Confirmation').length;
+  const preparingOrders = state.orders.filter((order) => order.status === 'Preparing').length;
+  const completedOrders = state.orders.filter((order) => order.status === 'Completed').length;
+  const pendingVerifications = state.orders.filter(
+    (order) => order.paymentMethod === 'gcash' && order.paymentStatus === 'Pending Verification'
+  ).length;
+
+  const totalSales = state.orders
+    .filter((order) => order.status === 'Completed' || order.paymentStatus === 'Verified' || order.paymentStatus === 'Paid')
+    .reduce((sum, order) => sum + Number(order.total), 0);
+
+  const salesToday = state.orders
+    .filter((order) => new Date(order.createdAt).toDateString() === new Date().toDateString())
+    .reduce((sum, order) => sum + Number(order.total), 0);
+
+  const salesThisWeek = state.orders
+    .filter((order) => {
+      const date = new Date(order.createdAt);
+      const diffDays = Math.floor((Date.now() - date.getTime()) / 86400000);
+      return diffDays <= 7 && order.status !== 'Cancelled';
+    })
+    .reduce((sum, order) => sum + Number(order.total), 0);
+
+  const salesThisMonth = state.orders
+    .filter((order) => {
+      const date = new Date(order.createdAt);
+      return date.getMonth() === new Date().getMonth() && date.getFullYear() === new Date().getFullYear();
+    })
+    .reduce((sum, order) => sum + Number(order.total), 0);
+
+  statsGrid.innerHTML = `
+    <div class="stat-card"><span class="label">Total orders</span><strong>${totalOrders}</strong></div>
+    <div class="stat-card"><span class="label">Pending orders</span><strong>${pendingOrders}</strong></div>
+    <div class="stat-card"><span class="label">Preparing</span><strong>${preparingOrders}</strong></div>
+    <div class="stat-card"><span class="label">Completed</span><strong>${completedOrders}</strong></div>
+    <div class="stat-card"><span class="label">GCash pending</span><strong>${pendingVerifications}</strong></div>
+    <div class="stat-card"><span class="label">Total sales</span><strong>${formatPrice(totalSales)}</strong></div>
+    <div class="stat-card"><span class="label">Sales today</span><strong>${formatPrice(salesToday)}</strong></div>
+    <div class="stat-card"><span class="label">Sales this week</span><strong>${formatPrice(salesThisWeek)}</strong></div>
+    <div class="stat-card"><span class="label">Sales this month</span><strong>${formatPrice(salesThisMonth)}</strong></div>
+  `;
+
+  const orderPanel = document.getElementById('orderManagementPanel');
+  orderPanel.innerHTML = `
+    <h3>Order management</h3>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Customer</th>
+          <th>Status</th>
+          <th>Payment</th>
+          <th>Total</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${state.orders.length ? state.orders
+          .slice()
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          .map(
+            (order) => `
+              <tr>
+                <td>${order.orderId}<br><small>${new Date(order.createdAt).toLocaleDateString()}</small></td>
+                <td>${order.customerName}<br><small>${order.department}</small></td>
+                <td><span class="status-chip ${statusClass(order.status)}">${order.status === 'Out for Delivery' ? 'On the Way' : order.status}</span></td>
+                <td><span class="payment-pill ${paymentClass(order.paymentStatus)}">${order.paymentStatus}</span></td>
+                <td>${formatPrice(order.total)}</td>
+                <td class="actions">
+                  ${order.paymentMethod === 'gcash' && order.paymentStatus === 'Pending Verification' ? `
+                    <button class="admin-btn success" data-admin-order-action="approve-payment" data-order-id="${order.id}">Approve</button>
+                    <button class="admin-btn danger" data-admin-order-action="reject-payment" data-order-id="${order.id}">Reject</button>
+                  ` : ''}
+                  ${getAdminOrderStatusAction(order) ? `<button class="admin-btn primary" data-admin-order-action="${getAdminOrderStatusAction(order).action}" data-order-id="${order.id}">${getAdminOrderStatusAction(order).label}</button>` : ''}
+                  ${!['Completed', 'Cancelled'].includes(order.status) ? `<button class="admin-btn warn" data-admin-order-action="cancel" data-order-id="${order.id}">Cancel</button>` : ''}
+                </td>
+              </tr>
+            `
+          )
+          .join('') : '<tr><td colspan="6">No orders yet.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+
+  orderPanel.querySelectorAll('[data-admin-order-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.adminOrderAction;
+      const orderId = button.dataset.orderId;
+      handleAdminOrderAction(action, orderId);
+    });
+  });
+
+  const productPanel = document.getElementById('productManagementPanel');
+  productPanel.innerHTML = `
+    <h3>Product management</h3>
+    <form id="productForm" class="product-form">
+      <input type="text" name="productName" placeholder="Product name" required />
+      <input type="number" name="productPrice" placeholder="Price" min="1" required />
+      <input type="number" name="productStock" placeholder="Stock" min="0" required />
+      <select name="productCategory">
+        ${['Classic', 'Signature', 'Local', 'Favorite', 'Seasonal', 'Indulgent', 'Celebration'].map((category) => `<option value="${category}">${category}</option>`).join('')}
+      </select>
+      <textarea name="productDescription" rows="3" placeholder="Description"></textarea>
+      <input type="url" name="productImage" placeholder="Image URL" />
+      <button class="btn btn-primary full-width" type="submit">Add product</button>
+    </form>
+    <div class="product-list">
+      ${state.products.map((product) => `
+        <div class="product-row">
+          <div>
+            <strong>${product.name}</strong>
+            <small>${formatPrice(product.price)} · ${product.stock} in stock · ${product.available ? 'Available' : 'Hidden'}</small>
+          </div>
+          <div class="actions">
+            <button class="product-action ${product.available ? 'warn' : 'success'}" data-product-toggle="${product.id}">${product.available ? 'Hide' : 'Show'}</button>
+            <button class="product-action danger" data-product-delete="${product.id}">Archive</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  productPanel.querySelector('#productForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const product = {
+      id: `custom-${Date.now()}`,
+      name: String(formData.get('productName') || '').trim(),
+      description: String(formData.get('productDescription') || '').trim() || 'Freshly made donut from Donutipid.',
+      price: Number(formData.get('productPrice')),
+      category: String(formData.get('productCategory') || 'Classic'),
+      image: String(formData.get('productImage') || 'variant-vanilla'),
+      available: true,
+      stock: Number(formData.get('productStock')),
+      featured: false
+    };
+
+    if (!product.name || !Number.isFinite(product.price) || !Number.isFinite(product.stock)) {
+      notify('Please complete the product form correctly.', 'error');
+      return;
+    }
+
+    state.products.unshift(product);
+    saveToStorage(STORAGE_KEYS.products, state.products);
+    renderProducts();
+    renderBestSellers();
+    renderCategoryFilters();
+    renderBoxBuilder();
+    renderAdminDashboard();
+    notify('New product added successfully.');
+  });
+
+  productPanel.querySelectorAll('[data-product-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const productId = button.dataset.productToggle;
+      const product = state.products.find((item) => item.id === productId);
+      if (!product) return;
+      product.available = !product.available;
+      saveToStorage(STORAGE_KEYS.products, state.products);
+      renderProducts();
+      renderBoxBuilder();
+      renderAdminDashboard();
+    });
+  });
+
+  productPanel.querySelectorAll('[data-product-delete]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const productId = button.dataset.productDelete;
+      state.products = state.products.filter((product) => product.id !== productId);
+      saveToStorage(STORAGE_KEYS.products, state.products);
+      renderProducts();
+      renderBestSellers();
+      renderCategoryFilters();
+      renderBoxBuilder();
+      renderAdminDashboard();
+      notify('Product archived.');
+    });
+  });
+
+  const salesPanel = document.getElementById('salesPanel');
+  const salesSummary = state.orders
+    .filter((order) => !['Cancelled', 'Rejected'].includes(order.status))
+    .map((order) => ({
+      orderId: order.orderId,
+      total: Number(order.total),
+      paymentMethod: order.paymentMethod,
+      status: order.status,
+      date: new Date(order.createdAt).toLocaleDateString()
+    }));
+
+  salesPanel.innerHTML = `
+    <h3>Sales and reports</h3>
+    <table class="sales-table">
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Method</th>
+          <th>Date</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${salesSummary.length ? salesSummary.map((sale) => `
+          <tr>
+            <td>${sale.orderId}</td>
+            <td>${sale.paymentMethod}</td>
+            <td>${sale.date}</td>
+            <td>${formatPrice(sale.total)}</td>
+          </tr>
+        `).join('') : '<tr><td colspan="4">No verified sales yet.</td></tr>'}
+      </tbody>
+    </table>
+    <button class="btn btn-secondary full-width" id="exportSalesBtn" style="margin-top: 16px;">Export CSV</button>
+  `;
+
+  document.getElementById('exportSalesBtn')?.addEventListener('click', () => {
+    exportOrdersCsv();
+  });
+
+  const customerPanel = document.getElementById('customerListPanel');
+  const customersByKey = new Map();
+  state.orders.forEach((order) => {
+    const customerName = String(order.customerName || 'Unknown customer').trim();
+    const mobile = String(order.mobile || '').trim();
+    const customerKey = (mobile || order.email || customerName).toLowerCase();
+    const customer = customersByKey.get(customerKey) || {
+      name: customerName,
+      mobile,
+      department: String(order.department || ''),
+      orders: [],
+      latestOrder: order
+    };
+
+    customer.orders.push(order);
+    if (new Date(order.createdAt) > new Date(customer.latestOrder.createdAt)) {
+      customer.latestOrder = order;
+      customer.name = customerName;
+      customer.mobile = mobile;
+      customer.department = String(order.department || '');
+    }
+    customersByKey.set(customerKey || order.id, customer);
+  });
+
+  customerPanel.innerHTML = `
+    <h3>Customers who ordered</h3>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th>Mobile</th>
+          <th>Department</th>
+          <th>Orders</th>
+          <th>Latest order</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${customersByKey.size ? [...customersByKey.values()]
+          .sort((first, second) => new Date(second.latestOrder.createdAt) - new Date(first.latestOrder.createdAt))
+          .map((customer) => `
+            <tr>
+              <td>${escapeHTML(customer.name)}</td>
+              <td>${escapeHTML(customer.mobile || '—')}</td>
+              <td>${escapeHTML(customer.department || '—')}</td>
+              <td>${customer.orders.length}</td>
+              <td>${escapeHTML(customer.latestOrder.orderId)}<br><small>${new Date(customer.latestOrder.createdAt).toLocaleDateString()}</small></td>
+            </tr>
+          `).join('') : '<tr><td colspan="5">No customers have ordered yet.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+}
+
+function handleAdminOrderAction(action, orderId) {
+  const order = state.orders.find((item) => item.id === orderId);
+  if (!order) return;
+
+  if (action === 'approve-payment') {
+    order.paymentStatus = 'Verified';
+    order.status = order.status === 'Pending Confirmation' ? 'Confirmed' : order.status;
+    notify(`GCash payment approved for ${order.orderId}.`);
+  }
+
+  if (action === 'reject-payment') {
+    order.paymentStatus = 'Rejected';
+    order.adminNotes = 'Payment rejected. Please upload a clearer receipt.';
+    notify(`GCash payment rejected for ${order.orderId}.`);
+  }
+
+  const statusActions = {
+    'accept-order': 'Confirmed',
+    'start-preparing': 'Preparing',
+    'mark-ready': 'Ready for Pickup',
+    'mark-on-way': 'On the Way',
+    'complete-order': 'Completed'
+  };
+
+  if (statusActions[action]) {
+    order.status = statusActions[action];
+    if (action === 'complete-order') order.paymentStatus = 'Paid';
+    notify(`${order.orderId} is now ${statusActions[action]}.`);
+  }
+
+  if (action === 'cancel') {
+    order.status = 'Cancelled';
+    order.paymentStatus = 'Cancelled';
+    notify(`${order.orderId} has been cancelled.`);
+  }
+
+  saveToStorage(STORAGE_KEYS.orders, state.orders);
+  renderCustomerOrders();
+  renderAdminDashboard();
+}
+
+function getAdminOrderStatusAction(order) {
+  const actions = {
+    'Pending Confirmation': { action: 'accept-order', label: 'Accept order' },
+    Confirmed: { action: 'start-preparing', label: 'Start preparing' },
+    Preparing: { action: 'mark-ready', label: 'Mark ready' },
+    'Ready for Pickup': { action: 'mark-on-way', label: 'Mark on the way' },
+    'On the Way': { action: 'complete-order', label: 'Mark completed' },
+    'Out for Delivery': { action: 'complete-order', label: 'Mark completed' }
+  };
+  return actions[order.status] || null;
+}
+
+function exportOrdersCsv() {
+  const rows = [
+    ['Order ID', 'Customer', 'Payment Method', 'Payment Status', 'Status', 'Total', 'Created At']
+  ];
+
+  state.orders.forEach((order) => {
+    rows.push([
+      order.orderId,
+      order.customerName,
+      order.paymentMethod,
+      order.paymentStatus,
+      order.status,
+      String(order.total),
+      new Date(order.createdAt).toISOString()
+    ]);
+  });
+
+  downloadCsvRows(rows, 'donutipid-sales-report.csv');
+  notify('Sales report exported as CSV.');
+}
+
+function downloadCsvRows(rows, filename) {
+  const csv = `\uFEFF${rows.map((row) => row.map((value) => {
+    const text = String(value ?? '');
+    const safeText = typeof value === 'string' && /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replace(/"/g, '""')}"`;
+  }).join(',')).join('\n')}`;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function runDailyOrderBackup() {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (localStorage.getItem(STORAGE_KEYS.dailyOrderBackupDate) === today || !state.orders.length) return;
+
+  const ordersToBackup = state.orders.slice();
+  const rows = [[
+    'Order ID', 'Customer', 'Mobile', 'Department', 'Delivery or Pickup Point', 'Items',
+    'Payment Method', 'GCash Reference ID', 'Payment Status', 'Order Status', 'Subtotal',
+    'Delivery Fee', 'Total', 'Preferred Schedule', 'Instructions', 'Created At'
+  ]];
+
+  ordersToBackup.forEach((order) => {
+    rows.push([
+      order.orderId,
+      order.customerName,
+      order.mobile,
+      order.department,
+      order.deliveryLocation,
+      (order.items || []).map((item) => `${item.name} x ${item.quantity}`).join('; '),
+      order.paymentMethod,
+      order.gcashReferenceId,
+      order.paymentStatus,
+      order.status,
+      order.subtotal,
+      order.deliveryFee,
+      order.total,
+      order.preferredSchedule,
+      order.instructions,
+      order.createdAt
+    ]);
+  });
+
+  let backupDateSaved = false;
+  try {
+    downloadCsvRows(rows, `donutipid-orders-${today}.csv`);
+    localStorage.setItem(STORAGE_KEYS.dailyOrderBackupDate, today);
+    backupDateSaved = true;
+    saveToStorage(STORAGE_KEYS.orders, []);
+    state.orders = [];
+    notify('Daily order CSV downloaded and saved orders cleared.');
+  } catch (error) {
+    state.orders = ordersToBackup;
+    try {
+      saveToStorage(STORAGE_KEYS.orders, ordersToBackup);
+      if (backupDateSaved) localStorage.removeItem(STORAGE_KEYS.dailyOrderBackupDate);
+    } catch (restoreError) {
+      notify('Daily backup failed. Order storage could not be restored.', 'error');
+      return;
+    }
+    notify('Daily backup failed. Saved orders were kept.', 'error');
+  }
+}
+
+function bindAdminModal() {
+  const modal = document.getElementById('adminModal');
+  const loginButton = document.getElementById('adminLoginBtn');
+  const closeButton = document.querySelector('.close-modal');
+
+  loginButton.addEventListener('click', () => {
+    modal.classList.remove('hidden');
+  });
+
+  closeButton.addEventListener('click', () => {
+    modal.classList.add('hidden');
+  });
+
+  document.getElementById('adminLoginForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const username = String(formData.get('adminUsername') || '').trim();
+    const password = String(formData.get('adminPassword') || '').trim();
+
+    if (username === 'Donut' && password === 'Donut123') {
+      state.admin.loggedIn = true;
+      saveToStorage(STORAGE_KEYS.admin, state.admin);
+      modal.classList.add('hidden');
+      renderAdminDashboard();
+      notify('Admin login successful.');
+      return;
+    }
+
+    notify('Invalid admin credentials.', 'error');
+  });
+
+  document.getElementById('logoutAdminBtn').addEventListener('click', () => {
+    state.admin.loggedIn = false;
+    saveToStorage(STORAGE_KEYS.admin, state.admin);
+    renderAdminDashboard();
+    notify('You have logged out.');
+  });
+}
+
+function bindNavToggle() {
+  const button = document.querySelector('.nav-toggle');
+  const nav = document.querySelector('.main-nav');
+
+  button.addEventListener('click', () => {
+    nav.classList.toggle('open');
+  });
+
+  nav.querySelectorAll('a').forEach((link) => {
+    link.addEventListener('click', () => nav.classList.remove('open'));
+  });
+}
+
+function syncPageView() {
+  const cartPageActive = window.location.hash === '#cart';
+  document.body.classList.toggle('cart-page-active', cartPageActive);
+  if (cartPageActive) window.scrollTo(0, 0);
+}
+
+function bindContactForm() {
+  document.getElementById('contactForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = event.target;
+    notify('Your message has been sent. We will follow up soon.');
+    form.reset();
+  });
+}
+
+function setupPaymentMethodToggle() {
+  const radios = document.querySelectorAll('input[name="paymentMethod"]');
+  const gcashInfo = document.getElementById('gcashInfo');
+  const gcashReferenceInput = document.getElementById('gcashReferenceId');
+
+  const updatePaymentDetails = () => {
+    const selected = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+    const isGcash = selected === 'gcash';
+    gcashInfo.classList.toggle('hidden', !isGcash);
+    gcashReferenceInput.required = isGcash;
+    gcashReferenceInput.setAttribute('aria-required', String(isGcash));
+  };
+
+  radios.forEach((radio) => {
+    radio.addEventListener('change', updatePaymentDetails);
+  });
+
+  updatePaymentDetails();
+}
+
+function initialize() {
+  renderCategoryFilters();
+  renderProducts();
+  renderBestSellers();
+  renderBoxBuilder();
+  bindBoxSizeChange();
+  renderCart();
+  renderCheckoutSummary();
+  renderCustomerOrders();
+  renderAdminDashboard();
+  bindAdminModal();
+  bindNavToggle();
+  bindContactForm();
+  setupPaymentMethodToggle();
+  window.addEventListener('hashchange', syncPageView);
+  syncPageView();
+
+  document.getElementById('cartButton').addEventListener('click', () => {
+    if (window.location.hash !== '#cart') {
+      window.location.hash = 'cart';
+    } else {
+      syncPageView();
+    }
+  });
+
+  document.getElementById('addBoxButton').addEventListener('click', addBoxToCart);
+  document.getElementById('randomizeBoxButton').addEventListener('click', randomizeBoxSelection);
+  document.getElementById('checkoutForm').addEventListener('submit', handleCheckout);
+}
+
+window.addEventListener('DOMContentLoaded', initialize);
